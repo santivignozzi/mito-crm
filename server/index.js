@@ -2,10 +2,12 @@ import express from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { db, tx, newId, now } from './db.js';
+import { db, tx, newId, now, DB_PATH, ON_RAILWAY, PERSISTENT } from './db.js';
+import { importDump } from './import.js';
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '25mb' }));
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 const J = (s, d) => {
   try {
@@ -40,11 +42,14 @@ const authed = (req) => {
   const expected = sign('ok');
   return c.length === expected.length && timingSafeEqual(Buffer.from(c), Buffer.from(expected));
 };
+// En un despliegue público no se sirven datos sin contraseña configurada.
+if (ON_RAILWAY && !PASSWORD)
+  app.use('/api', (req, res) => res.status(503).json({ error: 'Falta configurar la variable APP_PASSWORD en Railway. Agregala y volvé a desplegar.' }));
 app.post(
   '/api/login',
   wrap((req, res) => {
     if (PASSWORD && req.body?.password !== PASSWORD) throw fail(401, 'Contraseña incorrecta');
-    if (PASSWORD) res.setHeader('Set-Cookie', `crm_auth=${sign('ok')}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`);
+    if (PASSWORD) res.setHeader('Set-Cookie', `crm_auth=${sign('ok')}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
     return { ok: true };
   }),
 );
@@ -443,6 +448,20 @@ app.get(
   }),
 );
 
+// ---------- Carga inicial desde un export de monday ----------
+// Solo con la base vacía: nunca pisa datos ya cargados.
+app.post(
+  '/api/import',
+  wrap((req) => {
+    if (db.prepare('SELECT COUNT(*) AS n FROM boards').get().n > 0) throw fail(409, 'La base ya tiene tableros: la importación solo se permite con la base vacía.');
+    const d = req.body;
+    if (!Array.isArray(d?.boards) || !Array.isArray(d?.users) || !Array.isArray(d?.workspaces)) throw fail(400, 'El archivo no es un export válido de monday.');
+    const r = importDump(d);
+    notify(req);
+    return r;
+  }),
+);
+
 // ---------- Frontend estático ----------
 const dist = resolve('dist');
 if (existsSync(dist)) {
@@ -451,4 +470,7 @@ if (existsSync(dist)) {
 }
 
 const port = Number(process.env.PORT || 3001);
-app.listen(port, () => console.log(`Mito CRM en http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`Mito CRM en http://localhost:${port} · base: ${DB_PATH}`);
+  if (!PERSISTENT) console.warn('ATENCIÓN: no hay volumen adjunto. Los datos se pierden en cada despliegue; agregá un volumen al servicio en Railway.');
+});

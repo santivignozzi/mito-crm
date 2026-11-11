@@ -36,12 +36,21 @@ npm run import -- --reset                   # carga la base (borra lo anterior)
 
 Sin `--reset` la importación actualiza por ID y conserva lo creado en la app.
 
+## Despliegue en Railway
+
+1. **New → GitHub Repo** y elegir este repositorio. `railway.json` ya define build, arranque y healthcheck.
+2. En el servicio, **Variables**: agregar `APP_PASSWORD` (sin ella la app no entrega datos).
+3. En el servicio, **Volumes**: agregar un volumen (por ejemplo montado en `/data`). La base se guarda
+   ahí automáticamente; sin volumen los datos se pierden en cada despliegue.
+4. **Settings → Networking → Generate Domain** para obtener la URL pública.
+5. Entrar con la contraseña y, con la base vacía, subir el export de monday desde la pantalla inicial.
+
 ## Configuración
 
 | Variable       | Uso                                                              |
 | -------------- | ---------------------------------------------------------------- |
 | `PORT`         | Puerto del servidor (3001 por defecto)                           |
-| `DB_PATH`      | Archivo SQLite (`data/crm.db` por defecto)                       |
+| `DB_PATH`      | Archivo SQLite (por defecto, el volumen de Railway o `data/crm.db`) |
 | `APP_PASSWORD` | Si se define, la app pide esta contraseña compartida para entrar |
 
 Los datos viven en un único archivo SQLite: hay que desplegar en un host con disco persistente

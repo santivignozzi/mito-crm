@@ -1,9 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
-export const DB_PATH = resolve(process.env.DB_PATH || 'data/crm.db');
+// En Railway, si hay un volumen adjunto, la base va ahí para sobrevivir a los despliegues.
+const volume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+export const DB_PATH = resolve(process.env.DB_PATH || (volume ? join(volume, 'crm.db') : 'data/crm.db'));
+export const ON_RAILWAY = !!process.env.RAILWAY_ENVIRONMENT;
+export const PERSISTENT = !ON_RAILWAY || !!volume || !!process.env.DB_PATH;
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);

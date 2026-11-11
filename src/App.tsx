@@ -36,7 +36,7 @@ export function App() {
   const fail = useCallback((e: any) => {
     if (e.status === 401) return setNeedLogin(true);
     setToast(e.message || 'Error');
-    setTimeout(() => setToast(''), 4000);
+    if (e.status !== 503) setTimeout(() => setToast(''), 4000);
   }, []);
   const loadBoot = useCallback(() => api<Boot>('GET', '/bootstrap').then((b) => { setBoot(b); setNeedLogin(false); }).catch(fail), [fail]);
   const loadBoard = useCallback(
@@ -178,8 +178,15 @@ export function App() {
   }, [fail, loadBoard]);
 
   if (needLogin) return <Login onDone={loadBoot} />;
-  if (!boot) return <div className="splash">Cargando…</div>;
+  if (!boot) return <div className="splash">{toast || 'Cargando…'}</div>;
   const me = boot.users.find((u) => u.id === meId) || null;
+  if (!me && !boot.users.length)
+    return (
+      <div className="splash">
+        <ImportBox onDone={loadBoot} fail={fail} />
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    );
   if (!me)
     return (
       <div className="splash">
@@ -203,7 +210,7 @@ export function App() {
       <Sidebar boot={boot} me={me} boardId={route.boardId} reload={loadBoot} fail={fail} onOpenItem={(boardId, itemId) => { location.hash = `#/b/${boardId}`; setOpenId(itemId); }} onSwitchUser={() => { localStorage.removeItem('crm_user'); setMeId(null); }} />
       <main className="main">
         {!board || !view ? (
-          <div className="empty">{boot.boards.length ? 'Cargando tablero…' : 'Creá tu primer tablero desde la barra lateral.'}</div>
+          <div className="empty">{boot.boards.length ? 'Cargando tablero…' : <ImportBox onDone={loadBoot} fail={fail} />}</div>
         ) : (
           <BoardScreen board={board} view={view} users={boot.users} act={act} search={search} setSearch={setSearch} onActivity={() => setShowActivity(true)} onDeleted={() => { location.hash = ''; loadBoot(); }} fail={fail} />
         )}
@@ -211,6 +218,32 @@ export function App() {
       {board && openItem && <ItemPanel key={openItem.id} item={openItem} board={board} users={boot.users} act={act} />}
       {board && showActivity && <BoardActivity board={board} users={boot.users} onClose={() => setShowActivity(false)} />}
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+function ImportBox({ onDone, fail }: { onDone: () => void; fail: (e: any) => void }) {
+  const [busy, setBusy] = useState(false);
+  const upload = async (f?: File) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const r = await api('POST', '/import', JSON.parse(await f.text()));
+      alert(`Importado: ${r.boards} tableros, ${r.items} elementos, ${r.users} usuarios.`);
+      onDone();
+    } catch (e: any) {
+      fail(e instanceof SyntaxError ? new Error('El archivo no es un JSON válido') : e);
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="import-box">
+      <h2>Mito CRM está vacío</h2>
+      <p>Cargá el export de monday.com para traer todo tu espacio de trabajo.</p>
+      <label className="btn primary">
+        {busy ? 'Importando…' : '⇧ Importar export de monday (.json)'}
+        <input type="file" accept=".json,application/json" hidden disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
+      </label>
     </div>
   );
 }
